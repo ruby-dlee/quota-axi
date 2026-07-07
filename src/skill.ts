@@ -22,9 +22,9 @@ function yamlDoubleQuote(value: string): string {
 }
 
 /**
- * Render the installable SKILL.md for the quota-axi skill. The body is built
- * from the same shared guidance the CLI prints (description and top-level
- * help), rewriting invocations to non-interactive `npx -y quota-axi ...` so
+ * Render the installable SKILL.md for the quota-axi skill. The body uses the
+ * same shared CLI description and help text, then adds agent-facing workflow
+ * guidance that prefers non-interactive `npx -y quota-axi ...` invocation so
  * the CLI comes along on demand.
  *
  * @returns full SKILL.md contents including YAML frontmatter
