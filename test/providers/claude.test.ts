@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { normalizeClaudeApiUsage, parseClaudeCliUsage } from "../../src/providers/claude.js";
+import { normalizeClaudeApiUsage } from "../../src/providers/claude.js";
 
 const fixtureDir = join(import.meta.dirname, "..", "fixtures", "claude");
 
@@ -16,18 +16,6 @@ describe("Claude quota parsing", () => {
       { id: "seven_day", kind: "weekly", percentUsed: 36, percentRemaining: 64, resetsAt: "2026-07-10T16:00:00Z" },
       { id: "seven_day_opus", kind: "model", percentUsed: 7, percentRemaining: 93 },
       { id: "extra_usage", kind: "credits", percentUsed: 25, percentRemaining: 75, spentUsd: 5, limitUsd: 20 },
-    ]);
-  });
-
-  it("parses the Claude CLI usage view without leaking identity unless callers render it", () => {
-    const text = readFileSync(join(fixtureDir, "cli.txt"), "utf8");
-    const result = parseClaudeCliUsage(text);
-
-    expect(result?.account?.email).toBe("person@example.invalid");
-    expect(result?.plan).toBe("Pro");
-    expect(result?.windows).toMatchObject([
-      { id: "five_hour", percentUsed: 18, percentRemaining: 82, resetText: "Resets at 3:15 PM" },
-      { id: "seven_day", percentUsed: 36, percentRemaining: 64, resetText: "Resets in 4 days" },
     ]);
   });
 });

@@ -122,7 +122,8 @@ pnpm run dev
 ## Security Posture
 
 quota-axi reads `~/.claude/.credentials.json`, optional `Claude Code-credentials` from macOS Keychain only with explicit opt-in, and `$CODEX_HOME/auth.json` or `~/.codex/auth.json`.
-It may run `claude --allowed-tools ""` for `/usage` and `codex -s read-only -a untrusted app-server` for Codex JSON-RPC fallback.
+It may run `codex -s read-only -a untrusted app-server` for Codex JSON-RPC fallback.
+It never launches the Claude CLI, so it cannot accidentally spend the quota it measures.
 
 It sends requests only to Anthropic and OpenAI first-party usage endpoints with the user's local credentials.
 It never prints, logs, caches, or transmits credential values.

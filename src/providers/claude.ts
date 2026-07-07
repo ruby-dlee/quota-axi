@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readCachedProvider } from "../cache.js";
 import { readJsonFile } from "../lib/fs.js";
-import { commandExists, execFileText, spawnTextSession } from "../lib/process.js";
+import { execFileText } from "../lib/process.js";
 import { clampPercent, nowIso, retryAfterToIso } from "../lib/time.js";
 import type {
   AuthProviderReport,
@@ -19,7 +19,8 @@ import { failedProvider, sourceNames, staleFromCache, statusFromError, successPr
 const API_URL = "https://api.anthropic.com/api/oauth/usage";
 const OAUTH_BETA = "oauth-2025-04-20";
 const API_TIMEOUT_MS = 15_000;
-const CLI_TIMEOUT_MS = 15_000;
+const KEYCHAIN_PROMPT_TIMEOUT_MS = 60_000;
+const KEYCHAIN_ITEM_NOT_FOUND_EXIT_CODE = 44;
 const CREDENTIAL_FILE = join(homedir(), ".claude", ".credentials.json");
 const KEYCHAIN_SERVICE = "Claude Code-credentials";
 
@@ -34,10 +35,6 @@ type AvailableCredentialState = { status: "available"; credentials: ClaudeCreden
 type UnavailableCredentialState = { status: "missing" | "invalid" | "expired"; source: AuthSourceReport };
 type SkippedCredentialState = { status: "skipped"; source: AuthSourceReport };
 type CredentialState = AvailableCredentialState | UnavailableCredentialState | SkippedCredentialState;
-
-function isSkippedCredentialState(state: CredentialState): state is SkippedCredentialState {
-  return state.status === "skipped";
-}
 
 type RawUsageWindow = {
   utilization?: unknown;
@@ -75,9 +72,15 @@ export async function fetchQuota(options: ProviderOptions): Promise<ProviderQuot
       return (b.expiresAt ?? 0) - (a.expiresAt ?? 0);
     });
 
-  for (const skipped of credentialStates.filter(isSkippedCredentialState)) {
-    attempts.push({ source: skipped.source.source, status: "skipped", error: skipped.source.error });
-    finalError = skipped.source.error ?? finalError;
+  for (const state of credentialStates) {
+    if (state.status === "available") continue;
+    if (state.status === "skipped") {
+      attempts.push({ source: state.source.source, status: "skipped", error: state.source.error });
+      if (finalError === "Claude quota unavailable") finalError = state.source.error ?? finalError;
+      continue;
+    }
+    attempts.push({ source: state.source.source, status: "skipped", error: `credentials_${state.status}` });
+    finalError = "Claude sign-in required";
   }
 
   if (credentials.length > 0) {
@@ -109,27 +112,6 @@ export async function fetchQuota(options: ProviderOptions): Promise<ProviderQuot
     }
   }
 
-  attempts.push({ source: "cli-pty", status: "failed" });
-  try {
-    const quota = await probeClaudeCli();
-    attempts[attempts.length - 1] = { source: "cli-pty", status: "success" };
-    return successProvider({
-      provider: "claude",
-      label: "Claude",
-      source: "cli-pty",
-      plan: quota.plan,
-      account: quota.account,
-      windows: quota.windows,
-      refreshedAt: quota.refreshedAt,
-      sourcesTried: sourceNames(attempts),
-      attempts,
-    });
-  } catch (error) {
-    const message = errorMessage(error);
-    attempts[attempts.length - 1] = { source: "cli-pty", status: "failed", error: message };
-    finalError = finalError === "Claude quota unavailable" ? message : finalError;
-  }
-
   const cached = readCachedProvider("claude");
   if (cached) {
     return staleFromCache(cached, finalError, sourceNames(attempts), attempts);
@@ -158,10 +140,6 @@ export async function inspectAuth(options: ProviderOptions): Promise<AuthProvide
     }
     return state.source;
   });
-  sources.push({
-    source: "cli-pty",
-    status: (await commandExists("claude")) ? "available" : "missing",
-  });
   return { provider: "claude", sources };
 }
 
@@ -176,46 +154,6 @@ export function normalizeClaudeApiUsage(raw: unknown, plan?: string): { plan?: s
   ].filter((window): window is QuotaWindow => Boolean(window));
   if (windows.length === 0) return undefined;
   return { plan, windows, refreshedAt: nowIso() };
-}
-
-export function parseClaudeCliUsage(output: string): { plan?: string; account?: ProviderQuota["account"]; windows: QuotaWindow[]; refreshedAt: string } | undefined {
-  const text = stripAnsi(output);
-  const sessionBlock = extractBlock(text, /Current\s+session/i);
-  const weekBlock = extractBlock(text, /Current\s+week/i);
-  const windows: QuotaWindow[] = [];
-  const sessionPercent = parsePercentUsed(sessionBlock);
-  const weekPercent = parsePercentUsed(weekBlock);
-
-  if (sessionPercent !== undefined) {
-    windows.push(
-      withRemaining({
-        id: "five_hour",
-        label: "session",
-        kind: "session",
-        percentUsed: sessionPercent,
-        resetText: parseResetText(sessionBlock),
-      }),
-    );
-  }
-  if (weekPercent !== undefined) {
-    windows.push(
-      withRemaining({
-        id: "seven_day",
-        label: "week",
-        kind: "weekly",
-        percentUsed: weekPercent,
-        resetText: parseResetText(weekBlock),
-      }),
-    );
-  }
-  if (windows.length === 0) return undefined;
-
-  return {
-    account: { email: parseLine(text, /^\s*Account:\s*(.+)$/im) },
-    plan: parseLine(text, /^\s*(?:Org|Organization):\s*(.+)$/im),
-    windows,
-    refreshedAt: nowIso(),
-  };
 }
 
 async function readCredentialStates(options: ProviderOptions): Promise<CredentialState[]> {
@@ -243,15 +181,38 @@ async function readCredentialStates(options: ProviderOptions): Promise<Credentia
 }
 
 async function readKeychainCredentialState(): Promise<CredentialState> {
+  let blob: string;
   try {
-    const blob = await execFileText("security", ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"], API_TIMEOUT_MS);
+    blob = await execFileText(
+      "security",
+      ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
+      KEYCHAIN_PROMPT_TIMEOUT_MS,
+    );
+  } catch (error) {
+    return keychainFailureState(error);
+  }
+  try {
     return extractCredentialState(JSON.parse(blob), "keychain");
   } catch {
+    return { status: "invalid", source: { source: "keychain", status: "invalid" } };
+  }
+}
+
+function keychainFailureState(error: unknown): CredentialState {
+  const failure = error as { killed?: boolean; signal?: string | null; code?: number | string | null };
+  if (failure.killed || failure.signal) {
     return {
-      status: "missing",
-      source: { source: "keychain", status: "missing" },
+      status: "skipped",
+      source: { source: "keychain", status: "skipped", error: "keychain_prompt_timeout" },
     };
   }
+  if (failure.code === KEYCHAIN_ITEM_NOT_FOUND_EXIT_CODE) {
+    return { status: "missing", source: { source: "keychain", status: "missing" } };
+  }
+  return {
+    status: "skipped",
+    source: { source: "keychain", status: "skipped", error: "keychain_access_denied" },
+  };
 }
 
 function extractCredentialState(raw: unknown, source: ClaudeCredentials["source"], path?: string): CredentialState {
@@ -304,28 +265,6 @@ async function fetchOauthUsage(credentials: ClaudeCredentials): Promise<{
   }
 }
 
-async function probeClaudeCli(): Promise<{
-  plan?: string;
-  account?: ProviderQuota["account"];
-  windows: QuotaWindow[];
-  refreshedAt: string;
-}> {
-  if (!(await commandExists("claude"))) throw new Error("Claude quota unavailable");
-  const output = await spawnTextSession(
-    "claude",
-    ["--allowed-tools", ""],
-    (stdin) => {
-      stdin.write("/usage\n");
-      stdin.writeAfter(1_500, "\n");
-    },
-    CLI_TIMEOUT_MS,
-    (buffer) => /Current\s+(session|week)|usage/i.test(stripAnsi(buffer)),
-  );
-  const quota = parseClaudeCliUsage(output);
-  if (!quota) throw new Error("Claude quota unavailable");
-  return quota;
-}
-
 function normalizeWindow(raw: unknown, id: string, label: string, kind: QuotaWindow["kind"]): QuotaWindow | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const data = raw as RawUsageWindow;
@@ -360,38 +299,6 @@ function normalizeExtraUsage(raw: unknown): QuotaWindow | undefined {
     spentUsd,
     limitUsd,
   });
-}
-
-function stripAnsi(value: string): string {
-  return value.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
-}
-
-function extractBlock(text: string, heading: RegExp): string {
-  const match = heading.exec(text);
-  if (!match || match.index === undefined) return "";
-  const rest = text.slice(match.index);
-  const next = /\n\s*(Current\s+(?:session|week)|Account|Org|Organization)\b/i.exec(rest.slice(1));
-  return next ? rest.slice(0, next.index + 1) : rest.slice(0, 800);
-}
-
-function parsePercentUsed(block: string): number | undefined {
-  const percentMatches = [...block.matchAll(/(\d+(?:\.\d+)?)\s*%\s*(left|remaining|remain|used)?/gi)];
-  for (const match of percentMatches) {
-    const value = Number(match[1]);
-    const axis = match[2]?.toLowerCase();
-    if (!Number.isFinite(value)) continue;
-    if (axis === "left" || axis === "remaining" || axis === "remain") return clampPercent(100 - value);
-    if (axis === "used" || axis === undefined) return clampPercent(value);
-  }
-  return undefined;
-}
-
-function parseResetText(block: string): string | undefined {
-  return /(resets?\s+(?:in|at)[^\n]+)/i.exec(block)?.[1]?.trim();
-}
-
-function parseLine(text: string, label: RegExp): string | undefined {
-  return label.exec(text)?.[1]?.trim();
 }
 
 function stringValue(value: unknown): string | undefined {

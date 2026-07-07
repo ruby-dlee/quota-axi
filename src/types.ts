@@ -3,7 +3,6 @@ export type ProviderId = "claude" | "codex";
 export type ProviderSource =
   | "oauth"
   | "cli-rpc"
-  | "cli-pty"
   | "api"
   | "web"
   | "cache"

@@ -15,7 +15,6 @@ const PROVIDER_IDS = [
 const PROVIDER_SOURCES = [
   "oauth",
   "cli-rpc",
-  "cli-pty",
   "api",
   "web",
   "cache",
