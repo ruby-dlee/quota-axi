@@ -26,24 +26,32 @@ It is data only: it never routes, recommends, proxies, intercepts, logs in, impo
 $ npx -y quota-axi
 bin: ~/.npm/_npx/.../quota-axi
 description: Report local agent-provider quota windows for routing-aware agents
-generatedAt: 2026-07-06T18:10:00.000Z
+generatedAt: "2026-07-06T18:10:00.000Z"
 providers[2]{provider,plan,source,status,refreshedAt}:
-  claude,Pro,oauth,fresh,2026-07-06T18:09:55.000Z
-  codex,plus,cli-rpc,fresh,2026-07-06T18:09:58.000Z
+  claude,pro,oauth,fresh,"2026-07-06T18:09:55.000Z"
+  codex,plus,cli-rpc,fresh,"2026-07-06T18:09:58.000Z"
 windows[4]{provider,id,label,percentRemaining,resetsAt,state}:
-  claude,five_hour,session,82,2026-07-06T22:15:00.000Z,fresh
-  claude,seven_day,week,64,2026-07-10T16:00:00.000Z,fresh
-  codex,five_hour,session,71,2026-07-06T21:45:00.000Z,fresh
-  codex,weekly,week,43,2026-07-11T09:00:00.000Z,fresh
+  claude,five_hour,session,82,"2026-07-06T22:15:00.000Z",fresh
+  claude,seven_day,week,64,"2026-07-10T16:00:00.000Z",fresh
+  codex,five_hour,session,71,"2026-07-06T21:45:00.000Z",fresh
+  codex,weekly,week,43,"2026-07-11T09:00:00.000Z",fresh
+help[3]:
+  Run `quota-axi --provider claude --json` for JSON output
+  Run `quota-axi --full` to include account and source-attempt details
+  Run `quota-axi auth` to inspect local auth source availability without printing secrets
 ```
 
 ```sh
 $ quota-axi auth
+bin: ~/.npm/_npx/.../quota-axi
+description: Inspect local quota auth sources without printing secret values
 auth[4]{provider,source,path,status,error}:
   claude,oauth-file,~/.claude/.credentials.json,available,none
   claude,keychain,none,skipped,keychain_prompt_required
   codex,auth-json,~/.codex/auth.json,available,none
   codex,cli-rpc,none,available,none
+help[1]:
+  Run `quota-axi --allow-keychain-prompt auth` to permit macOS Keychain access
 ```
 
 ## Install
@@ -87,8 +95,8 @@ pnpm run dev
 └─────┬─────────┘       └──────┬───────┘
       ▼                        ▼
 ┌───────────────┐       ┌──────────────┐
-│ CLI fallback  │ ───▶  │ normalized   │
-│ no prompts    │       │ quota model  │
+│ codex-only    │ ───▶  │ normalized   │
+│ CLI fallback  │       │ quota model  │
 └─────┬─────────┘       └──────┬───────┘
       ▼                        ▼
 ┌───────────────┐       ┌──────────────┐
@@ -96,9 +104,9 @@ pnpm run dev
 └───────────────┘       └──────────────┘
 ```
 
-- **Live first** - each provider gets a 15 second live fetch attempt before stale cache fallback.
+- **Live first** - live sources are tried first, with a 15 second timeout per fetch attempt, before stale cache fallback.
 - **No default Keychain prompt** - macOS Claude Keychain reads are skipped unless `--allow-keychain-prompt` is passed.
-- **Partial success is success** - one provider can fail while another returns fresh or stale data, and the process still exits 0.
+- **Partial success is success** - one provider can fail while another returns fresh or stale data, and the process still exits 0. Exit code 1 means every provider failed, and 2 means a usage error.
 - **No token equivalence** - quota-axi does not claim that one provider percentage equals another provider percentage.
 
 ## CLI Reference
@@ -116,7 +124,7 @@ pnpm run dev
 | `--json`                    | Emit normalized JSON instead of TOON                       |
 | `--full`                    | Include account identity and source attempts               |
 | `--allow-keychain-prompt`   | Permit macOS Claude Keychain access that could prompt      |
-| `--help`                    | Print terse AXI help                                       |
+| `-h`, `--help`              | Print terse AXI help                                       |
 | `-v`, `-V`, `--version`     | Print version                                              |
 
 ## Security Posture
@@ -127,7 +135,7 @@ It never launches the Claude CLI, so it cannot accidentally spend the quota it m
 
 It sends requests only to Anthropic and OpenAI first-party usage endpoints with the user's local credentials.
 It never prints, logs, caches, or transmits credential values.
-The cache lives at `~/.cache/quota-axi/quotas.json`, uses `0600` file permissions, and stores normalized non-secret snapshots only.
+The cache lives at `~/.cache/quota-axi/quotas.json` (or under `$XDG_CACHE_HOME/quota-axi/` when `XDG_CACHE_HOME` is set), uses `0600` file permissions, and stores normalized non-secret snapshots only.
 
 ## Development
 
