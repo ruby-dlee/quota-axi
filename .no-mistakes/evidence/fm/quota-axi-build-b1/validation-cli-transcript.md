@@ -37,7 +37,7 @@ $ echo $?
 
 ```console
 $ quota-axi
-bin: /Users/kunchen/.no-mistakes/worktrees/6eca570dbcdb/01KWXB99P4NFCYGKPZM1TJZRRX/bin/quota-axi.ts
+bin: <worktree>/bin/quota-axi.ts
 description: Report local agent-provider quota windows for routing-aware agents
 generatedAt: "2035-01-15T12:00:00.000Z"
 providers[2]{provider,plan,source,status,refreshedAt}:
@@ -62,7 +62,7 @@ $ echo $?
 
 ```console
 $ quota-axi auth
-bin: /Users/kunchen/.no-mistakes/worktrees/6eca570dbcdb/01KWXB99P4NFCYGKPZM1TJZRRX/bin/quota-axi.ts
+bin: <worktree>/bin/quota-axi.ts
 description: Inspect local quota auth sources without printing secret values
 auth[4]{provider,source,path,status,error}:
   claude,oauth-file,~/.claude/.credentials.json,available,none
@@ -131,7 +131,7 @@ $ echo $?
 
 ```console
 $ quota-axi --full
-bin: /Users/kunchen/.no-mistakes/worktrees/6eca570dbcdb/01KWXB99P4NFCYGKPZM1TJZRRX/bin/quota-axi.ts
+bin: <worktree>/bin/quota-axi.ts
 description: Report local agent-provider quota windows for routing-aware agents
 generatedAt: "2035-01-15T12:00:00.000Z"
 providers[2]{provider,plan,source,status,refreshedAt}:
@@ -163,8 +163,8 @@ $ echo $?
 
 ```console
 $ stat -f "%Lp %N" "$XDG_CACHE_HOME/quota-axi" "$XDG_CACHE_HOME/quota-axi/quotas.json"
-700 /Users/kunchen/.no-mistakes/worktrees/6eca570dbcdb/01KWXB99P4NFCYGKPZM1TJZRRX/.no-mistakes/evidence/fm/quota-axi-build-b1/runtime.bHkAr4/cache/quota-axi
-600 /Users/kunchen/.no-mistakes/worktrees/6eca570dbcdb/01KWXB99P4NFCYGKPZM1TJZRRX/.no-mistakes/evidence/fm/quota-axi-build-b1/runtime.bHkAr4/cache/quota-axi/quotas.json
+700 <worktree>/.no-mistakes/evidence/fm/quota-axi-build-b1/runtime.bHkAr4/cache/quota-axi
+600 <worktree>/.no-mistakes/evidence/fm/quota-axi-build-b1/runtime.bHkAr4/cache/quota-axi/quotas.json
 $ grep -ciE "access[_-]?token|authorization|bearer|sk-" "$XDG_CACHE_HOME/quota-axi/quotas.json"
 0
 $ cat "$XDG_CACHE_HOME/quota-axi/quotas.json"
@@ -268,7 +268,7 @@ $ cat "$XDG_CACHE_HOME/quota-axi/quotas.json"
 
 ```console
 $ quota-axi
-bin: /Users/kunchen/.no-mistakes/worktrees/6eca570dbcdb/01KWXB99P4NFCYGKPZM1TJZRRX/bin/quota-axi.ts
+bin: <worktree>/bin/quota-axi.ts
 description: Report local agent-provider quota windows for routing-aware agents
 generatedAt: "2035-01-15T12:00:00.000Z"
 providers[2]{provider,plan,source,status,refreshedAt}:
@@ -293,7 +293,7 @@ $ echo $?
 
 ```console
 $ quota-axi
-bin: /Users/kunchen/.no-mistakes/worktrees/6eca570dbcdb/01KWXB99P4NFCYGKPZM1TJZRRX/bin/quota-axi.ts
+bin: <worktree>/bin/quota-axi.ts
 description: Report local agent-provider quota windows for routing-aware agents
 generatedAt: "2035-01-15T12:00:00.000Z"
 providers[2]{provider,plan,source,status,refreshedAt}:
