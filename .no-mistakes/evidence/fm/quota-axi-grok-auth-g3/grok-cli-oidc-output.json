@@ -33,9 +33,7 @@
         "status": "fresh",
         "stale": false,
         "refreshedAt": "2026-07-08T18:28:25.485Z",
-        "sourcesTried": [
-          "api"
-        ]
+        "sourcesTried": ["api"]
       }
     }
   ]

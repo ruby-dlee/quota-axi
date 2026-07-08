@@ -17,9 +17,7 @@
       "state": {
         "status": "fresh",
         "stale": false,
-        "sourcesTried": [
-          "api"
-        ],
+        "sourcesTried": ["api"],
         "refreshedAt": "2026-07-08T18:28:25.485Z"
       },
       "plan": "X Premium+",

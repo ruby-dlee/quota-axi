@@ -15,7 +15,10 @@ globalThis.fetch = async (url, init = {}) => {
         : authorization,
     accept: headers.get("accept"),
   };
-  writeFileSync(requestEvidenceUrl, `${JSON.stringify(requestEvidence, null, 2)}\n`);
+  writeFileSync(
+    requestEvidenceUrl,
+    `${JSON.stringify(requestEvidence, null, 2)}\n`,
+  );
 
   if (String(url) !== billingUrl || authorization !== expectedAuth) {
     return new Response(JSON.stringify({ error: "unexpected Grok request" }), {
@@ -30,11 +33,11 @@ globalThis.fetch = async (url, init = {}) => {
         currentPeriod: {
           type: "USAGE_PERIOD_TYPE_WEEKLY",
           start: "2026-07-06T19:59:29.885889+00:00",
-          end: "2026-07-13T19:59:29.885889+00:00"
+          end: "2026-07-13T19:59:29.885889+00:00",
         },
-        prepaidBalance: { val: 0 }
+        prepaidBalance: { val: 0 },
       },
-      subscriptionTier: "X Premium+"
+      subscriptionTier: "X Premium+",
     }),
     {
       status: 200,
