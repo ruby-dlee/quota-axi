@@ -160,6 +160,31 @@ describe("Grok quota parsing", () => {
     expect(normalizeGrokBilling({ config: {} })).toBeUndefined();
   });
 
+  it("normalizes current billing period windows without inventing usage percentages", () => {
+    const result = normalizeGrokBilling({
+      config: {
+        currentPeriod: {
+          type: "USAGE_PERIOD_TYPE_WEEKLY",
+          start: "2026-07-06T19:59:29.885889+00:00",
+          end: "2026-07-13T19:59:29.885889+00:00",
+        },
+        prepaidBalance: { val: 0 },
+      },
+      subscriptionTier: "X Premium+",
+    });
+
+    expect(result?.plan).toBe("X Premium+");
+    expect(result?.credits).toEqual({ remaining: 0, unit: "credits" });
+    expect(result?.windows).toEqual([
+      {
+        id: "credits",
+        label: "credits",
+        kind: "credits",
+        resetsAt: "2026-07-13T19:59:29.885Z",
+      },
+    ]);
+  });
+
   it("continues past expired entries to use later valid credentials", async () => {
     writeAuth({
       expired: {
@@ -233,6 +258,48 @@ describe("Grok quota parsing", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           authorization: "Bearer session-key",
+        }),
+      }),
+    );
+  });
+
+  it("uses Grok OIDC auth records scoped to auth.x.ai", async () => {
+    writeAuth({
+      "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+        key: "oidc-session-key",
+        auth_mode: "oidc",
+        email: "person@example.invalid",
+        team_id: "team_fixture",
+        expires_at: "2035-01-01T00:00:00.000Z",
+        refresh_token: "fixture-refresh-token",
+        oidc_issuer: "https://auth.x.ai",
+      },
+    });
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            config: {
+              creditUsagePercent: 25,
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.state.status).toBe("fresh");
+    expect(result.account).toMatchObject({
+      email: "person@example.invalid",
+      organization: "team_fixture",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          authorization: "Bearer oidc-session-key",
         }),
       }),
     );
