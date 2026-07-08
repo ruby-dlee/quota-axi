@@ -136,7 +136,8 @@ export function normalizeGrokBilling(
       refreshedAt: string;
     }
   | undefined {
-  const config = objectValue(objectValue(raw)?.config);
+  const data = objectValue(raw);
+  const config = objectValue(data?.config);
   if (!config) return undefined;
   const currentPeriod = objectValue(config.currentPeriod);
   const resetsAt =
@@ -187,12 +188,22 @@ export function normalizeGrokBilling(
       }),
     );
   }
-  if (windows.length === 0) return undefined;
   const prepaidBalance = numberValue(objectValue(config.prepaidBalance)?.val);
+  if (windows.length === 0 && resetsAt) {
+    windows.push({
+      id: "credits",
+      label: "credits",
+      kind: "credits",
+      resetsAt,
+    });
+  }
+  if (windows.length === 0) return undefined;
   return {
     plan:
       stringValue(config.subscription_tier) ??
-      stringValue(config.subscriptionTier),
+      stringValue(config.subscriptionTier) ??
+      stringValue(data?.subscription_tier) ??
+      stringValue(data?.subscriptionTier),
     account: {
       email: credentials?.email,
       organization: credentials?.teamId,
@@ -508,9 +519,18 @@ function isGrokSessionCandidate(candidate: CredentialCandidate): boolean {
   if (isGrokApiKeyCandidate(candidate)) return false;
   const scope = parseScope(candidate.scope);
   if (!scope) return false;
+  if (scope.host === "auth.x.ai" && isOidcCredential(candidate.raw))
+    return true;
   if (scope.host === "accounts.x.ai" && scope.path.startsWith("/sign-in"))
     return true;
   return scope.host === "grok.com" || scope.host === "www.grok.com";
+}
+
+function isOidcCredential(item: Record<string, unknown>): boolean {
+  const authMode =
+    stringValue(item.auth_mode)?.toLowerCase() ??
+    stringValue(item.authMode)?.toLowerCase();
+  return authMode === "oidc";
 }
 
 function isGrokApiKeyCandidate(candidate: CredentialCandidate): boolean {
@@ -533,12 +553,17 @@ function parseScope(
   value: string | undefined,
 ): { host: string; path: string } | undefined {
   if (!value) return undefined;
+  const scope = normalizeCredentialScope(value);
   try {
-    const url = new URL(value.includes("://") ? value : `https://${value}`);
+    const url = new URL(scope.includes("://") ? scope : `https://${scope}`);
     return { host: url.hostname.toLowerCase(), path: url.pathname };
   } catch {
     return undefined;
   }
+}
+
+function normalizeCredentialScope(value: string): string {
+  return value.replace(/::[^/]*$/, "");
 }
 
 function parseIso(value: unknown): string | undefined {
