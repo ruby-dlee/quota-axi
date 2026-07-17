@@ -104,8 +104,26 @@ describe("argv normalization", () => {
 
   it("preserves the single-token help and version flags for the SDK", () => {
     expect(normalizeArgv(["--help"])).toEqual(["--help"]);
+    expect(normalizeArgv(["-h"])).toEqual(["--help"]);
     expect(normalizeArgv(["-v"])).toEqual(["-v"]);
     expect(normalizeArgv(["--version"])).toEqual(["--version"]);
+  });
+
+  it("routes legacy help aliases to top-level help with commands", () => {
+    expect(normalizeArgv(["auth", "-h"])).toEqual(["--help"]);
+    expect(normalizeArgv(["-h", "quota"])).toEqual(["--help"]);
+  });
+
+  it("routes flag-first explicit commands to the command token", () => {
+    expect(normalizeArgv(["--allow-keychain-prompt", "auth"])).toEqual([
+      "auth",
+      "--allow-keychain-prompt",
+    ]);
+    expect(normalizeArgv(["--json", "quota"])).toEqual(["quota", "--json"]);
+    expect(normalizeArgv(["--check", "update"])).toEqual([
+      "update",
+      "--check",
+    ]);
   });
 
   it("leaves an unknown command for the SDK to reject", () => {
@@ -352,6 +370,27 @@ describe("CLI plumbing via the axi SDK", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it("prints the top-level help for legacy -h", async () => {
+    const output = await capture(["auth", "-h"]);
+    expect(output).toContain("usage: quota-axi [auth] [flags]");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("routes flag-before-auth invocations to auth", async () => {
+    PROVIDERS.claude = providerWithAuth("claude", "Claude");
+    PROVIDERS.codex = providerWithAuth("codex", "Codex");
+    PROVIDERS.cursor = providerWithAuth("cursor", "Cursor");
+    PROVIDERS.copilot = providerWithAuth("copilot", "GitHub Copilot");
+    PROVIDERS.grok = providerWithAuth("grok", "Grok");
+
+    const output = await capture(["--allow-keychain-prompt", "auth"]);
+    expect(output).toContain(
+      "Inspect local quota auth sources without printing secret values",
+    );
+    expect(output).not.toContain("unknown argument");
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it("frames unknown flags as a validation error with exit code 2", async () => {
     const output = await capture(["--bogus"]);
     expect(output).toContain("unknown argument: --bogus");
@@ -420,6 +459,25 @@ function providerWithQuota(quota: ProviderQuota): ProviderAdapter {
     },
     async inspectAuth() {
       return { provider: quota.provider, sources: [] };
+    },
+  };
+}
+
+function providerWithAuth(
+  provider: ProviderQuota["provider"],
+  label: string,
+): ProviderAdapter {
+  return {
+    id: provider,
+    label,
+    async fetchQuota() {
+      throw new Error("unexpected quota fetch");
+    },
+    async inspectAuth() {
+      return {
+        provider,
+        sources: [{ source: "test", status: "available" }],
+      };
     },
   };
 }

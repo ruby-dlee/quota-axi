@@ -61,6 +61,21 @@ export async function main(options: MainOptions = {}): Promise<void> {
  */
 export function normalizeArgv(raw: string[]): string[] {
   if (raw.length === 0) return ["quota"];
+  if (findLegacyFlag(raw, (arg) => arg === "--help" || arg === "-h") >= 0) {
+    return ["--help"];
+  }
+  const versionIndex = findLegacyFlag(raw, isVersionFlag);
+  if (versionIndex >= 0) {
+    return [raw[versionIndex]];
+  }
+  const commandIndex = findCommand(raw);
+  if (commandIndex > 0) {
+    return [
+      raw[commandIndex],
+      ...raw.slice(0, commandIndex),
+      ...raw.slice(commandIndex + 1),
+    ];
+  }
   const first = raw[0];
   if (raw.length === 1 && isTopLevelFlag(first)) {
     return raw;
@@ -75,9 +90,40 @@ export function normalizeArgv(raw: string[]): string[] {
 }
 
 function isTopLevelFlag(flag: string): boolean {
+  return flag === "--help" || isVersionFlag(flag);
+}
+
+function isVersionFlag(flag: string): boolean {
   return (
-    flag === "--help" || flag === "-v" || flag === "-V" || flag === "--version"
+    flag === "-v" || flag === "-V" || flag === "--version"
   );
+}
+
+function findLegacyFlag(
+  raw: string[],
+  predicate: (arg: string) => boolean,
+): number {
+  for (let index = 0; index < raw.length; index++) {
+    const arg = raw[index];
+    if (arg === "--provider") {
+      index++;
+      continue;
+    }
+    if (predicate(arg)) return index;
+  }
+  return -1;
+}
+
+function findCommand(raw: string[]): number {
+  for (let index = 0; index < raw.length; index++) {
+    const arg = raw[index];
+    if (arg === "--provider") {
+      index++;
+      continue;
+    }
+    if (arg === "quota" || arg === "auth" || arg === "update") return index;
+  }
+  return -1;
 }
 
 function readPackageVersion(): string {
