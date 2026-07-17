@@ -120,10 +120,7 @@ describe("argv normalization", () => {
       "--allow-keychain-prompt",
     ]);
     expect(normalizeArgv(["--json", "quota"])).toEqual(["quota", "--json"]);
-    expect(normalizeArgv(["--check", "update"])).toEqual([
-      "update",
-      "--check",
-    ]);
+    expect(normalizeArgv(["--check", "update"])).toEqual(["update", "--check"]);
   });
 
   it("leaves an unknown command for the SDK to reject", () => {

@@ -94,9 +94,7 @@ function isTopLevelFlag(flag: string): boolean {
 }
 
 function isVersionFlag(flag: string): boolean {
-  return (
-    flag === "-v" || flag === "-V" || flag === "--version"
-  );
+  return flag === "-v" || flag === "-V" || flag === "--version";
 }
 
 function findLegacyFlag(
