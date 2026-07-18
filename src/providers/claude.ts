@@ -30,6 +30,7 @@ import {
 } from "./common.js";
 
 const API_URL = "https://api.anthropic.com/api/oauth/usage";
+const PROFILE_API_URL = "https://api.anthropic.com/api/oauth/profile";
 const OAUTH_BETA = "oauth-2025-04-20";
 const CLAUDE_CODE_USER_AGENT = "claude-code/2.1.202";
 const API_TIMEOUT_MS = 15_000;
@@ -59,6 +60,11 @@ type CredentialState =
   | UnavailableCredentialState
   | SkippedCredentialState;
 type KeychainItemPresence = "present" | "missing" | "unknown";
+type ClaudeAccount = NonNullable<ProviderQuota["account"]>;
+type ClaudeIdentityResult = {
+  account: ClaudeAccount;
+  error?: string;
+};
 
 type RawUsageWindow = {
   utilization?: unknown;
@@ -142,6 +148,15 @@ export async function fetchQuota(
       try {
         const quota = await fetchOauthUsage(credential);
         attempts[attempts.length - 1] = { source: "oauth", status: "success" };
+        attempts.push(
+          quota.identityError
+            ? {
+                source: "oauth-profile",
+                status: "failed",
+                error: quota.identityError,
+              }
+            : { source: "oauth-profile", status: "success" },
+        );
         return successProvider({
           provider: "claude",
           label: "Claude",
@@ -237,6 +252,33 @@ export function normalizeClaudeApiUsage(
 
   if (windows.length === 0) return undefined;
   return { plan, windows, refreshedAt: nowIso() };
+}
+
+export function normalizeClaudeProfile(
+  raw: unknown,
+): ClaudeAccount | undefined {
+  const data = objectValue(raw);
+  if (!data) return undefined;
+  const account = objectValue(data.account);
+  const accountId = stringValue(account?.uuid);
+  if (!accountId) return undefined;
+
+  const organization = objectValue(data.organization);
+  return {
+    accountId,
+    email:
+      stringValue(account?.email) ??
+      stringValue(account?.email_address) ??
+      stringValue(account?.emailAddress) ??
+      stringValue(data.email_address) ??
+      stringValue(data.emailAddress) ??
+      stringValue(data.email),
+    organization:
+      stringValue(organization?.name) ??
+      stringValue(data.organization_name) ??
+      stringValue(data.organizationName),
+    identityStatus: "verified",
+  };
 }
 
 function normalizeScopedLimits(raw: unknown): QuotaWindow[] {
@@ -516,6 +558,7 @@ function extractCredentialState(
 async function fetchOauthUsage(credentials: ClaudeCredentials): Promise<{
   plan?: string;
   account?: ProviderQuota["account"];
+  identityError?: string;
   windows: QuotaWindow[];
   refreshedAt: string;
 }> {
@@ -538,10 +581,58 @@ async function fetchOauthUsage(credentials: ClaudeCredentials): Promise<{
       credentials.plan,
     );
     if (!quota) throw new Error("Claude quota unavailable");
-    return quota;
+    const identity = await fetchOauthProfile(credentials);
+    return {
+      ...quota,
+      account: identity.account,
+      identityError: identity.error,
+    };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchOauthProfile(
+  credentials: ClaudeCredentials,
+): Promise<ClaudeIdentityResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(PROFILE_API_URL, {
+      headers: {
+        authorization: `Bearer ${credentials.accessToken}`,
+        "User-Agent": CLAUDE_CODE_USER_AGENT,
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+        accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return unverifiedClaudeIdentity(
+        `identity_profile_http_${response.status}`,
+      );
+    }
+    const account = normalizeClaudeProfile(await response.json());
+    return account
+      ? { account }
+      : unverifiedClaudeIdentity("identity_profile_unrecognized");
+  } catch (error) {
+    return unverifiedClaudeIdentity(
+      error instanceof Error && error.name === "AbortError"
+        ? "identity_profile_timeout"
+        : "identity_profile_unavailable",
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function unverifiedClaudeIdentity(error: string): ClaudeIdentityResult {
+  return {
+    account: { identityStatus: "unverified" },
+    error,
+  };
 }
 
 // Anthropic's OAuth usage endpoint follows plain HTTP semantics: 401/403 mean

@@ -209,6 +209,99 @@ describe("Claude credential-state reporting", () => {
     );
   });
 
+  it("fetches a profile with the same OAuth credential and exposes a verified account identity", async () => {
+    const home = useTempHome();
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", ".credentials.json"),
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: "fresh-token",
+          expiresAt: "2035-01-01T00:00:00.000Z",
+        },
+      }),
+    );
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/api/oauth/profile")) {
+        return new Response(
+          JSON.stringify({
+            account: {
+              uuid: "11111111-2222-4333-8444-555555555555",
+              email: "person@example.invalid",
+            },
+            organization: { name: "Fixture Organization" },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ five_hour: { utilization: 12 } }), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { fetchQuota } = await import("../../src/providers/claude.js");
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.account).toEqual({
+      accountId: "11111111-2222-4333-8444-555555555555",
+      email: "person@example.invalid",
+      organization: "Fixture Organization",
+      identityStatus: "verified",
+    });
+    expect(result.attempts).toContainEqual({
+      source: "oauth-profile",
+      status: "success",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.anthropic.com/api/oauth/profile",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          authorization: "Bearer fresh-token",
+          "Cache-Control": "no-cache",
+        }),
+      }),
+    );
+  });
+
+  it("marks identity unverified when the profile response lacks a stable account id", async () => {
+    const home = useTempHome();
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", ".credentials.json"),
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: "fresh-token",
+          expiresAt: "2035-01-01T00:00:00.000Z",
+        },
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) =>
+        String(input).endsWith("/api/oauth/profile")
+          ? new Response(
+              JSON.stringify({ email_address: "person@example.invalid" }),
+              { status: 200 },
+            )
+          : new Response(JSON.stringify({ five_hour: { utilization: 12 } }), {
+              status: 200,
+            }),
+      ),
+    );
+
+    const { fetchQuota } = await import("../../src/providers/claude.js");
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.state.status).toBe("fresh");
+    expect(result.account).toEqual({ identityStatus: "unverified" });
+    expect(result.attempts).toContainEqual({
+      source: "oauth-profile",
+      status: "failed",
+      error: "identity_profile_unrecognized",
+    });
+  });
+
   it("surfaces missing file credentials as a skipped attempt and auth_required", async () => {
     useTempHome();
 
