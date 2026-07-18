@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.7](https://github.com/ruby-dlee/quota-axi/compare/quota-axi-v0.1.6...quota-axi-v0.1.7) (2026-07-18)
+
+
+### Features
+
+* harden managed provider isolation ([54dae3a](https://github.com/ruby-dlee/quota-axi/commit/54dae3a3003a59d5e9ce1ddc482621f45ca65604))
+* honor Claude config homes in quota reads ([3da0054](https://github.com/ruby-dlee/quota-axi/commit/3da00546704a9d1fa03e166aba800dd63ecd2a1d))
+* **providers:** isolate managed Claude and Codex profiles ([962844a](https://github.com/ruby-dlee/quota-axi/commit/962844a52d611c5366fa535582fb72029dcd029c))
+
+
+### Bug Fixes
+
+* **claude:** bind Keychain reads to exact account ([9943b39](https://github.com/ruby-dlee/quota-axi/commit/9943b39d5fa3a786a742a3306192fa00500b2ae2))
+* **claude:** bind Keychain reads to exact macOS account ([d61cbcf](https://github.com/ruby-dlee/quota-axi/commit/d61cbcfcec08a79f5f48654b9bafd5e346c770da))
+* **claude:** emit exact Keychain account ([b1b313c](https://github.com/ruby-dlee/quota-axi/commit/b1b313ce85c1fb7e4eae41a313db59ef01beefcd))
+* **render:** expose Keychain account in TOON ([a704a73](https://github.com/ruby-dlee/quota-axi/commit/a704a73b4792d7ef782b1283496f1c570ce9e1ae))
+
 ## [0.1.6](https://github.com/kunchenguid/quota-axi/compare/quota-axi-v0.1.5...quota-axi-v0.1.6) (2026-07-17)
 
 
