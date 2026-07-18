@@ -83,6 +83,7 @@ export function renderAuthToon(
       path: source.path ? collapseHome(source.path) : "none",
       status: source.status,
       error: source.error ?? "none",
+      account: source.account ?? "none",
     })),
   );
   return [
@@ -119,5 +120,6 @@ function attemptRow(provider: ProviderQuota, attempt: SourceAttempt) {
     source: attempt.source,
     status: attempt.status,
     error: attempt.error ?? "none",
+    account: attempt.account ?? "none",
   };
 }

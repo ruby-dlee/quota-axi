@@ -206,6 +206,29 @@ describe("CLI quota rendering", () => {
     expect(output).not.toContain("codex,keychain_access_required");
   });
 
+  it("includes the exact Keychain account in full TOON attempts", async () => {
+    useTempCache();
+    PROVIDERS.claude = providerWithQuota({
+      ...freshClaudeQuota(),
+      attempts: [
+        {
+          source: "keychain",
+          status: "success",
+          account: "exact-passwd-account",
+        },
+      ],
+    });
+
+    const output = await capture(["--provider", "claude", "--full"]);
+
+    expect(output).toContain(
+      "attempts[1]{provider,source,status,error,account}:",
+    );
+    expect(output).toContain(
+      "claude,keychain,success,none,exact-passwd-account",
+    );
+  });
+
   it("surfaces keychain access advice in JSON when stale quota is blocked by a skipped keychain prompt", async () => {
     useTempCache();
     PROVIDERS.claude = providerWithQuota(staleClaudeQuota());
@@ -386,6 +409,33 @@ describe("CLI plumbing via the axi SDK", () => {
     );
     expect(output).not.toContain("unknown argument");
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it("includes the exact Keychain account in auth TOON", async () => {
+    PROVIDERS.claude = {
+      ...providerWithAuth("claude", "Claude"),
+      async inspectAuth() {
+        return {
+          provider: "claude",
+          sources: [
+            {
+              source: "keychain",
+              status: "available",
+              account: "exact-passwd-account",
+            },
+          ],
+        };
+      },
+    };
+
+    const output = await capture(["auth", "--provider", "claude"]);
+
+    expect(output).toContain(
+      "auth[1]{provider,source,path,status,error,account}:",
+    );
+    expect(output).toContain(
+      "claude,keychain,none,available,none,exact-passwd-account",
+    );
   });
 
   it("frames unknown flags as a validation error with exit code 2", async () => {

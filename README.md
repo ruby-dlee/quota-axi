@@ -107,14 +107,14 @@ $ quota-axi --provider claude --json
 $ quota-axi auth
 bin: ~/.npm/_npx/.../quota-axi
 description: Inspect local quota auth sources without printing secret values
-auth[7]{provider,source,path,status,error}:
-  claude,oauth-file,~/.claude/.credentials.json,available,none
-  claude,keychain,none,skipped,keychain_prompt_required
-  codex,auth-json,~/.codex/auth.json,available,none
-  codex,cli-rpc,~/.local/bin/codex,available,none
-  cursor,state-vscdb,~/Library/Application Support/Cursor/User/globalStorage/state.vscdb,available,none
-  copilot,apps-json,~/.config/github-copilot/apps.json,available,none
-  grok,auth-json,~/.grok/auth.json,available,none
+auth[7]{provider,source,path,status,error,account}:
+  claude,oauth-file,~/.claude/.credentials.json,available,none,none
+  claude,keychain,none,skipped,keychain_prompt_required,current-user
+  codex,auth-json,~/.codex/auth.json,available,none,none
+  codex,cli-rpc,~/.local/bin/codex,available,none,none
+  cursor,state-vscdb,~/Library/Application Support/Cursor/User/globalStorage/state.vscdb,available,none,none
+  copilot,apps-json,~/.config/github-copilot/apps.json,available,none,none
+  grok,auth-json,~/.grok/auth.json,available,none,none
 help[1]:
   Run `quota-axi --allow-keychain-prompt auth` to permit macOS Keychain access
 ```
@@ -285,7 +285,7 @@ Source attempts can include `credentialPresent` when a non-secret probe confirms
 | Auth source entry    | `source`, optional `path`, `status`, optional `error`, and exact non-secret `account` for Claude Keychain entries |
 
 Auth source entries can include `credentialPresent` when a non-secret probe confirms a credential item exists.
-Claude Keychain entries in JSON auth reports and `--json --full` quota attempts include the passwd-derived macOS `account` used with the Keychain service. Managed consumers should require exactly one matching Keychain-account record and fail closed on missing, wrong, or duplicate records.
+Claude Keychain entries in TOON or JSON auth reports and full quota attempts include the passwd-derived macOS `account` used with the Keychain service. Managed consumers should require exactly one matching Keychain-account record and fail closed on missing, wrong, or duplicate records.
 
 | Name                 | Values                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
