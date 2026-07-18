@@ -18,7 +18,9 @@ jobs:
     name: Generated files must not be hand-edited
     runs-on: ubuntu-latest
     # release-please owns CHANGELOG.md and .release-please-manifest.json; its PR
-    # is the one legitimate place those files change, so we exempt its author.
+    # is the one legitimate place those files change. The repository owner can
+    # also submit that generated commit through no-mistakes when Actions PR
+    # creation is disabled, so the script verifies that manual release path.
     if: >-
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.user.login != 'release-please[bot]'
@@ -33,9 +35,43 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -eu
           files=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}")
+
+          is_verified_manual_release() {
+            [ "$PR_AUTHOR" = "$REPOSITORY_OWNER" ] || return 1
+            case "$PR_TITLE" in
+              "chore: release quota-axi "*) ;;
+              *) return 1 ;;
+            esac
+            printf '%s' "${PR_BODY:-}" | grep -qF -- \
+              'Updates from [git push no-mistakes](https://github.com/kunchenguid/no-mistakes)' || return 1
+
+            release_commit=$(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}" | sed -n '1p')
+            [ -n "$release_commit" ] || return 1
+            [ "$(git show -s --format=%P "$release_commit")" = "$BASE_SHA" ] || return 1
+            [ "$(git show -s --format=%ae "$release_commit")" = \
+              '41898282+github-actions[bot]@users.noreply.github.com' ] || return 1
+            case "$(git show -s --format=%s "$release_commit")" in
+              "chore(main): release quota-axi "*) ;;
+              *) return 1 ;;
+            esac
+
+            release_files=$(git diff-tree --no-commit-id --name-only -r "$release_commit" | LC_ALL=C sort)
+            expected_release_files=$(printf '%s\n' \
+              .release-please-manifest.json CHANGELOG.md package.json | LC_ALL=C sort)
+            [ "$release_files" = "$expected_release_files" ] || return 1
+
+            # CI-fix commits may follow the generated commit, but the immutable
+            # release outputs themselves must remain byte-for-byte unchanged.
+            git diff --quiet "$release_commit" "$HEAD_SHA" -- \
+              .release-please-manifest.json CHANGELOG.md package.json
+          }
 
           violated=""
           for path in CHANGELOG.md .release-please-manifest.json; do
@@ -50,6 +86,10 @@ jobs:
           done
 
           if [ -n "$violated" ]; then
+            if is_verified_manual_release; then
+              echo "Verified repository-owner release PR raised through no-mistakes. OK."
+              exit 0
+            fi
             {
               echo "::error::This PR modifies release-please-generated files:${violated}"
               echo
