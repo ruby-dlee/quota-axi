@@ -278,13 +278,14 @@ Source attempts can include `credentialPresent` when a non-secret probe confirms
 
 ### `auth --json` shape
 
-| Object               | Fields                                                    |
-| -------------------- | --------------------------------------------------------- |
-| Auth report          | `generatedAt`, `schemaVersion: 1`, and `auth`             |
-| Provider auth report | `provider` and `sources`                                  |
-| Auth source entry    | `source`, optional `path`, `status`, and optional `error` |
+| Object               | Fields                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Auth report          | `generatedAt`, `schemaVersion: 1`, and `auth`                                                                     |
+| Provider auth report | `provider` and `sources`                                                                                          |
+| Auth source entry    | `source`, optional `path`, `status`, optional `error`, and exact non-secret `account` for Claude Keychain entries |
 
 Auth source entries can include `credentialPresent` when a non-secret probe confirms a credential item exists.
+Claude Keychain entries in JSON auth reports and `--json --full` quota attempts include the passwd-derived macOS `account` used with the Keychain service. Managed consumers should require exactly one matching Keychain-account record and fail closed on missing, wrong, or duplicate records.
 
 | Name                 | Values                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
@@ -309,7 +310,7 @@ Auth source entries can include `credentialPresent` when a non-secret probe conf
 
 - quota-axi records the non-secret access marker after any successful Keychain value read.
 - When that marker exists, plain calls read the Keychain value again so an already-approved "Always Allow" grant keeps live Claude quota fresh.
-- Without the flag or marker, quota-axi may perform a non-secret Keychain item presence check so it only suggests Keychain access when a Claude credential item exists. Both presence and value reads bind the service to the current macOS account, so another account's same-service item cannot be selected.
+- Without the flag or marker, quota-axi may perform a non-secret Keychain item presence check so it only suggests Keychain access when a Claude credential item exists. Both presence and value reads bind the service to the passwd-derived current macOS account, so another account's same-service item cannot be selected. Machine-readable auth-source entries and full quota attempts report that exact non-secret account for independent verification; ambient `USER` and `LOGNAME` are not authoritative.
 - After a successful usage read, quota-axi queries Anthropic's first-party OAuth profile endpoint with the same credential. Its authoritative root `account.uuid` is exposed as `account.accountId` only in `--full` output; if that field is absent, `identityStatus` is `unverified` instead of deriving an identity from email, organization data, or cached account metadata.
 
 **Codex**

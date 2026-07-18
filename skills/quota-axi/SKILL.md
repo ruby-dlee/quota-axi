@@ -71,6 +71,9 @@ examples:
 - Claude `--full` output exposes the authoritative OAuth profile `account.uuid` as
   `account.accountId` when Anthropic returns one; otherwise the account identity is explicitly
   marked unverified rather than inferred.
+- Claude Keychain entries in JSON auth output and `--json --full` attempts include the exact
+  passwd-derived macOS `account` used for the Keychain lookup. Managed consumers should require
+  exactly one matching record and fail closed on missing, wrong, or duplicate account data.
 - The quota cache at `~/.cache/quota-axi/quotas.json` only ever holds normalized
   non-secret snapshots.
   Fresh provider reports with no windows clear stale provider snapshots instead of caching

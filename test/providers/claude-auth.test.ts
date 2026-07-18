@@ -262,6 +262,7 @@ describe("Claude credential-state reporting", () => {
     expect(auth.sources).toContainEqual({
       source: "keychain",
       status: "available",
+      account: keychainAccount,
     });
   });
 
@@ -323,6 +324,7 @@ describe("Claude credential-state reporting", () => {
     expect(auth.sources).toContainEqual({
       source: "keychain",
       status: "available",
+      account: keychainAccount,
     });
   });
 
@@ -559,12 +561,14 @@ describe("Claude credential-state reporting", () => {
       status: "skipped",
       error: "keychain_prompt_required",
       credentialPresent: true,
+      account: keychainAccount,
     });
     expect(result.attempts).toContainEqual({
       source: "keychain",
       status: "skipped",
       error: "keychain_prompt_required",
       credentialPresent: true,
+      account: keychainAccount,
     });
   });
 
@@ -621,7 +625,17 @@ describe("Claude credential-state reporting", () => {
     expect(auth.sources).toContainEqual({
       source: "keychain",
       status: "available",
+      account: keychainAccount,
     });
+    expect(
+      result.attempts?.filter((attempt) => attempt.source === "keychain"),
+    ).toEqual([
+      {
+        source: "keychain",
+        status: "success",
+        account: keychainAccount,
+      },
+    ]);
     expect(result.state.status).toBe("fresh");
     expect(result.source).toBe("oauth");
     expect(fetchMock).toHaveBeenCalledWith(
@@ -662,6 +676,15 @@ describe("Claude credential-state reporting", () => {
     const result = await fetchQuota({ allowKeychainPrompt: true });
 
     expect(result.state.status).toBe("fresh");
+    expect(
+      result.attempts?.filter((attempt) => attempt.source === "keychain"),
+    ).toEqual([
+      {
+        source: "keychain",
+        status: "success",
+        account: keychainAccount,
+      },
+    ]);
     expect(execFileText).toHaveBeenCalledWith(
       "/usr/bin/security",
       [
@@ -770,11 +793,13 @@ describe("Claude credential-state reporting", () => {
     expect(auth.sources).toContainEqual({
       source: "keychain",
       status: "missing",
+      account: keychainAccount,
     });
     expect(result.attempts).toContainEqual({
       source: "keychain",
       status: "skipped",
       error: "credentials_missing",
+      account: keychainAccount,
     });
     expect(result.attempts).not.toContainEqual(
       expect.objectContaining({
@@ -783,6 +808,68 @@ describe("Claude credential-state reporting", () => {
       }),
     );
   });
+
+  it.each([
+    {
+      label: "access denial",
+      securityResult: Object.assign(new Error("denied"), { code: 1 }),
+      sourceStatus: "skipped" as const,
+      sourceError: "keychain_access_denied",
+      attemptError: "keychain_access_denied",
+    },
+    {
+      label: "prompt timeout",
+      securityResult: Object.assign(new Error("timeout"), { killed: true }),
+      sourceStatus: "skipped" as const,
+      sourceError: "keychain_prompt_timeout",
+      attemptError: "keychain_prompt_timeout",
+    },
+    {
+      label: "malformed credential JSON",
+      securityResult: "{not-json",
+      sourceStatus: "invalid" as const,
+      sourceError: "json_parse_error",
+      attemptError: "credentials_invalid",
+    },
+  ])(
+    "emits the exact Keychain account for $label",
+    async ({ securityResult, sourceStatus, sourceError, attemptError }) => {
+      usePlatform("darwin");
+      useTempHome();
+      await writeKeychainAccessMarker();
+      const execFileText = vi.fn(async () => {
+        if (securityResult instanceof Error) throw securityResult;
+        return securityResult;
+      });
+      vi.doMock("../../src/lib/process.js", () => ({ execFileText }));
+
+      const { fetchQuota, inspectAuth } =
+        await import("../../src/providers/claude.js");
+      const auth = await inspectAuth({ allowKeychainPrompt: false });
+      const result = await fetchQuota({ allowKeychainPrompt: false });
+
+      expect(
+        auth.sources.filter((source) => source.source === "keychain"),
+      ).toEqual([
+        {
+          source: "keychain",
+          status: sourceStatus,
+          error: sourceError,
+          account: keychainAccount,
+        },
+      ]);
+      expect(
+        result.attempts?.filter((attempt) => attempt.source === "keychain"),
+      ).toEqual([
+        {
+          source: "keychain",
+          status: "skipped",
+          error: attemptError,
+          account: keychainAccount,
+        },
+      ]);
+    },
+  );
 
   it("surfaces malformed file credentials as invalid auth", async () => {
     const home = useTempHome();

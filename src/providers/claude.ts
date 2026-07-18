@@ -40,8 +40,10 @@ const KEYCHAIN_ITEM_NOT_FOUND_EXIT_CODE = 44;
 const DEFAULT_KEYCHAIN_SERVICE = "Claude Code-credentials";
 const MACOS_SECURITY_BINARY = "/usr/bin/security";
 
-type ClaudeCredentials = {
-  source: "oauth-file" | "keychain";
+type ClaudeCredentialLocation =
+  | { source: "oauth-file"; path: string }
+  | { source: "keychain"; keychainAccount: string };
+type ClaudeCredentials = ClaudeCredentialLocation & {
   accessToken: string;
   plan?: string;
   expiresAt?: number;
@@ -130,7 +132,16 @@ export async function fetchQuota(
     });
 
   for (const state of credentialStates) {
-    if (state.status === "available") continue;
+    if (state.status === "available") {
+      if (state.credentials.source === "keychain") {
+        attempts.push({
+          source: "keychain",
+          status: "success",
+          account: state.credentials.keychainAccount,
+        });
+      }
+      continue;
+    }
     if (state.status === "skipped") {
       const attempt: SourceAttempt = {
         source: state.source.source,
@@ -138,16 +149,21 @@ export async function fetchQuota(
         error: state.source.error,
       };
       if (state.source.credentialPresent) attempt.credentialPresent = true;
+      if (state.source.account !== undefined)
+        attempt.account = state.source.account;
       attempts.push(attempt);
       if (finalError === "Claude quota unavailable")
         finalError = state.source.error ?? finalError;
       continue;
     }
-    attempts.push({
+    const attempt: SourceAttempt = {
       source: state.source.source,
       status: "skipped",
       error: `credentials_${state.status}`,
-    });
+    };
+    if (state.source.account !== undefined)
+      attempt.account = state.source.account;
+    attempts.push(attempt);
     finalError = "Claude sign-in required";
   }
 
@@ -216,14 +232,7 @@ export async function inspectAuth(
   const states = await readCredentialStates(options, locations);
   const sources = states.map((state): AuthSourceReport => {
     if (state.status === "available") {
-      return {
-        source: state.credentials.source,
-        path:
-          state.credentials.source === "oauth-file"
-            ? locations.credentialFile
-            : undefined,
-        status: "available",
-      };
+      return credentialSourceReport(state.credentials, "available");
     }
     return state.source;
   });
@@ -367,8 +376,7 @@ async function readCredentialStates(
 
   const fileState = extractCredentialState(
     readJsonFileResult(locations.credentialFile),
-    "oauth-file",
-    locations.credentialFile,
+    { source: "oauth-file", path: locations.credentialFile },
   );
   states.push(fileState);
 
@@ -412,13 +420,18 @@ async function readSkippedKeychainCredentialState(
         status: "skipped",
         error: "keychain_prompt_required",
         credentialPresent: true,
+        account: locations.keychainAccount,
       },
     };
   }
   if (presence === "missing") {
     return {
       status: "missing",
-      source: { source: "keychain", status: "missing" },
+      source: {
+        source: "keychain",
+        status: "missing",
+        account: locations.keychainAccount,
+      },
     };
   }
   return {
@@ -427,6 +440,7 @@ async function readSkippedKeychainCredentialState(
       source: "keychain",
       status: "skipped",
       error: "keychain_presence_check_failed",
+      account: locations.keychainAccount,
     },
   };
 }
@@ -457,13 +471,13 @@ async function readKeychainCredentialState(
       KEYCHAIN_PROMPT_TIMEOUT_MS,
     );
   } catch (error) {
-    return keychainFailureState(error);
+    return keychainFailureState(error, locations.keychainAccount);
   }
   writeKeychainAccessMarkerBestEffort(locations);
   try {
     return extractCredentialState(
       { status: "success", value: JSON.parse(blob) },
-      "keychain",
+      { source: "keychain", keychainAccount: locations.keychainAccount },
     );
   } catch {
     return {
@@ -472,6 +486,7 @@ async function readKeychainCredentialState(
         source: "keychain",
         status: "invalid",
         error: "json_parse_error",
+        account: locations.keychainAccount,
       },
     };
   }
@@ -563,7 +578,10 @@ function isKeychainItemNotFound(error: unknown): boolean {
   );
 }
 
-function keychainFailureState(error: unknown): CredentialState {
+function keychainFailureState(
+  error: unknown,
+  keychainAccount: string,
+): CredentialState {
   const failure = error as {
     killed?: boolean;
     signal?: string | null;
@@ -576,13 +594,18 @@ function keychainFailureState(error: unknown): CredentialState {
         source: "keychain",
         status: "skipped",
         error: "keychain_prompt_timeout",
+        account: keychainAccount,
       },
     };
   }
   if (isKeychainItemNotFound(error)) {
     return {
       status: "missing",
-      source: { source: "keychain", status: "missing" },
+      source: {
+        source: "keychain",
+        status: "missing",
+        account: keychainAccount,
+      },
     };
   }
   return {
@@ -591,25 +614,31 @@ function keychainFailureState(error: unknown): CredentialState {
       source: "keychain",
       status: "skipped",
       error: "keychain_access_denied",
+      account: keychainAccount,
     },
   };
 }
 
 function extractCredentialState(
   raw: JsonFileReadResult,
-  source: ClaudeCredentials["source"],
-  path?: string,
+  location: ClaudeCredentialLocation,
 ): CredentialState {
   if (raw.status === "missing")
-    return { status: "missing", source: { source, path, status: "missing" } };
+    return {
+      status: "missing",
+      source: credentialSourceReport(location, "missing"),
+    };
   if (raw.status === "invalid")
     return {
       status: "invalid",
-      source: { source, path, status: "invalid", error: raw.error },
+      source: credentialSourceReport(location, "invalid", raw.error),
     };
   const data = objectValue(raw.value);
   if (!data)
-    return { status: "invalid", source: { source, path, status: "invalid" } };
+    return {
+      status: "invalid",
+      source: credentialSourceReport(location, "invalid"),
+    };
   const oauth =
     data.claudeAiOauth && typeof data.claudeAiOauth === "object"
       ? (data.claudeAiOauth as Record<string, unknown>)
@@ -617,16 +646,39 @@ function extractCredentialState(
   const accessToken =
     stringValue(oauth.accessToken) ?? stringValue(oauth.access_token);
   if (!accessToken)
-    return { status: "invalid", source: { source, path, status: "invalid" } };
+    return {
+      status: "invalid",
+      source: credentialSourceReport(location, "invalid"),
+    };
   const expiresAt = expiresAtMillis(oauth.expiresAt);
   if (expiresAt !== undefined && expiresAt <= Date.now())
-    return { status: "expired", source: { source, path, status: "expired" } };
+    return {
+      status: "expired",
+      source: credentialSourceReport(location, "expired"),
+    };
   const plan =
     stringValue(oauth.subscriptionType) ?? stringValue(data.subscriptionType);
   return {
     status: "available",
-    credentials: { source, accessToken, plan, expiresAt },
+    credentials: {
+      ...location,
+      accessToken,
+      plan,
+      expiresAt,
+    },
   };
+}
+
+function credentialSourceReport(
+  location: ClaudeCredentialLocation,
+  status: AuthSourceReport["status"],
+  error?: string,
+): AuthSourceReport {
+  const report: AuthSourceReport = { source: location.source, status };
+  if (location.source === "oauth-file") report.path = location.path;
+  else report.account = location.keychainAccount;
+  if (error !== undefined) report.error = error;
+  return report;
 }
 
 async function fetchOauthUsage(credentials: ClaudeCredentials): Promise<{
