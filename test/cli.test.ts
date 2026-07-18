@@ -229,6 +229,30 @@ describe("CLI quota rendering", () => {
     );
   });
 
+  it("does not invent an account for OAuth-file TOON attempts", async () => {
+    useTempCache();
+    PROVIDERS.claude = providerWithQuota({
+      ...freshClaudeQuota(),
+      attempts: [
+        {
+          source: "oauth-file",
+          status: "skipped",
+          error: "credentials_expired",
+        },
+      ],
+    });
+
+    const output = await capture(["--provider", "claude", "--full"]);
+
+    expect(output).toContain(
+      "attempts[1]{provider,source,status,error}:\n" +
+        "  claude,oauth-file,skipped,credentials_expired",
+    );
+    expect(output).not.toContain(
+      "claude,oauth-file,skipped,credentials_expired,none",
+    );
+  });
+
   it("surfaces keychain access advice in JSON when stale quota is blocked by a skipped keychain prompt", async () => {
     useTempCache();
     PROVIDERS.claude = providerWithQuota(staleClaudeQuota());

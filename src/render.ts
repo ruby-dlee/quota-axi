@@ -120,6 +120,6 @@ function attemptRow(provider: ProviderQuota, attempt: SourceAttempt) {
     source: attempt.source,
     status: attempt.status,
     error: attempt.error ?? "none",
-    account: attempt.account ?? "none",
+    ...(attempt.account === undefined ? {} : { account: attempt.account }),
   };
 }
