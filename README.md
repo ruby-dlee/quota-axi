@@ -107,14 +107,14 @@ $ quota-axi --provider claude --json
 $ quota-axi auth
 bin: ~/.npm/_npx/.../quota-axi
 description: Inspect local quota auth sources without printing secret values
-auth[7]{provider,source,path,status,error}:
-  claude,oauth-file,~/.claude/.credentials.json,available,none
-  claude,keychain,none,skipped,keychain_prompt_required
-  codex,auth-json,~/.codex/auth.json,available,none
-  codex,cli-rpc,~/.local/bin/codex,available,none
-  cursor,state-vscdb,~/Library/Application Support/Cursor/User/globalStorage/state.vscdb,available,none
-  copilot,apps-json,~/.config/github-copilot/apps.json,available,none
-  grok,auth-json,~/.grok/auth.json,available,none
+auth[7]{provider,source,path,status,error,account}:
+  claude,oauth-file,~/.claude/.credentials.json,available,none,none
+  claude,keychain,none,skipped,keychain_prompt_required,current-user
+  codex,auth-json,~/.codex/auth.json,available,none,none
+  codex,cli-rpc,~/.local/bin/codex,available,none,none
+  cursor,state-vscdb,~/Library/Application Support/Cursor/User/globalStorage/state.vscdb,available,none,none
+  copilot,apps-json,~/.config/github-copilot/apps.json,available,none,none
+  grok,auth-json,~/.grok/auth.json,available,none,none
 help[1]:
   Run `quota-axi --allow-keychain-prompt auth` to permit macOS Keychain access
 ```
@@ -219,12 +219,13 @@ It is generated from `src/skill.ts`; update it with `pnpm run build:skill` and v
 
 ### Quota report shape
 
-| Object                        | Fields                                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------------------ |
-| Quota report                  | `providers`                                                                                |
-| Provider report               | `provider`, `label`, `source`, `windows`, `state`, optional `plan`, and optional `credits` |
-| Provider report with `--full` | Optional `account` identity and per-source `attempts`                                      |
-| Account identity (`--full`)   | Optional `email`, `organization`, `accountId`, and `identityStatus`                        |
+| Object                        | Fields                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Quota report                  | `providers`                                                                                                  |
+| Provider report               | `provider`, `label`, `source`, `windows`, `state`, optional `plan`, and optional `credits`                   |
+| Provider report with `--full` | Optional `account` identity and per-source `attempts`                                                        |
+| Account identity (`--full`)   | Optional `email`, `organization`, `accountId`, and `identityStatus`                                          |
+| Source attempt (`--full`)     | `source`, `status`, optional `error` or `credentialPresent`, and `account` only for Claude Keychain attempts |
 
 Account identity and per-source `attempts` are omitted unless `--full` is passed.
 Claude `identityStatus` is `verified` only when Anthropic returns an authoritative account identifier; `email` and `organization` are display-only and must not be used for duplicate detection.
@@ -262,7 +263,7 @@ Default TOON output includes the same condition in an `advice` block with `provi
 | Window kinds                     | `session`, `weekly`, `monthly`, `model`, `credits`, or `unknown`             |
 | Source attempt statuses          | `success`, `failed`, or `skipped`                                            |
 
-Source attempts can include `credentialPresent` when a non-secret probe confirms a credential item exists.
+Claude Keychain attempts in TOON or JSON include the exact passwd-derived macOS `account` used for the lookup; non-Keychain attempts, including `oauth-file`, omit `account`. If the OS account cannot be resolved, the Keychain attempt reports `keychain_account_unavailable` without an account. Managed consumers should require exactly one matching Keychain-account record and fail closed on missing, wrong, or duplicate records. Attempts can also include `credentialPresent` when a non-secret probe confirms a credential item exists.
 
 ### Provider windows
 
@@ -278,13 +279,14 @@ Source attempts can include `credentialPresent` when a non-secret probe confirms
 
 ### `auth --json` shape
 
-| Object               | Fields                                                    |
-| -------------------- | --------------------------------------------------------- |
-| Auth report          | `generatedAt`, `schemaVersion: 1`, and `auth`             |
-| Provider auth report | `provider` and `sources`                                  |
-| Auth source entry    | `source`, optional `path`, `status`, and optional `error` |
+| Object               | Fields                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Auth report          | `generatedAt`, `schemaVersion: 1`, and `auth`                                                                     |
+| Provider auth report | `provider` and `sources`                                                                                          |
+| Auth source entry    | `source`, optional `path`, `status`, optional `error`, and exact non-secret `account` for Claude Keychain entries |
 
 Auth source entries can include `credentialPresent` when a non-secret probe confirms a credential item exists.
+Claude Keychain entries in TOON or JSON auth reports include the passwd-derived macOS `account` used with the Keychain service; non-Keychain entries omit it, and `keychain_account_unavailable` is reported without one. The same fail-closed account-matching rule applies as for full quota attempts.
 
 | Name                 | Values                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
@@ -310,6 +312,7 @@ Auth source entries can include `credentialPresent` when a non-secret probe conf
 - quota-axi records the non-secret access marker after any successful Keychain value read.
 - When that marker exists, plain calls read the Keychain value again so an already-approved "Always Allow" grant keeps live Claude quota fresh.
 - Without the flag or marker, quota-axi may perform a non-secret Keychain item presence check so it only suggests Keychain access when a Claude credential item exists.
+- Presence and value reads invoke fixed `/usr/bin/security` with both the profile-derived service and the passwd-derived macOS account, so `PATH`, `USER`, and `LOGNAME` cannot redirect selection to another binary or account. If the OS account is unavailable, Keychain is skipped with `keychain_account_unavailable` while the OAuth-file and stale-cache fallbacks remain available.
 - After a successful usage read, quota-axi queries Anthropic's first-party OAuth profile endpoint with the same credential. Its authoritative root `account.uuid` is exposed as `account.accountId` only in `--full` output; if that field is absent, `identityStatus` is `unverified` instead of deriving an identity from email, organization data, or cached account metadata.
 
 **Codex**
