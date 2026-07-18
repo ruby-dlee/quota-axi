@@ -72,7 +72,9 @@ examples:
   `account.accountId` when Anthropic returns one; otherwise the account identity is explicitly
   marked unverified rather than inferred.
 - Claude Keychain entries in TOON or JSON auth output and full attempts include the exact
-  passwd-derived macOS `account` used for the Keychain lookup. Managed consumers should require
+  passwd-derived macOS `account` used for the Keychain lookup; non-Keychain records, including
+  OAuth-file attempts, omit it. If the OS account cannot be resolved,
+  `keychain_account_unavailable` is emitted without an account. Managed consumers should require
   exactly one matching record and fail closed on missing, wrong, or duplicate account data.
 - The quota cache at `~/.cache/quota-axi/quotas.json` only ever holds normalized
   non-secret snapshots.
